@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG 02 — Vector Databases</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-card: #0d1117;
+            --bg-code: #161b22;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent: #76B900;
+            --accent-dim: #76B90044;
+            --accent-glow: #76B90033;
+            --border: #21262d;
+            --font-display: 'Space Grotesk', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+            --font-body: 'Inter', sans-serif;
+            --max-width: 900px;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-family: var(--font-body);
+            font-size: 17px;
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1.5rem;
+            text-align: center;
+            position: relative;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .hero > * { position: relative; z-index: 1; }
+        .series-label {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+        .hero h1 {
+            font-family: var(--font-display);
+            font-size: clamp(2rem, 5vw, 3.2rem);
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.2;
+            margin-bottom: 1rem;
+        }
+        .hero h1 .accent { color: var(--accent); }
+        .hero .subtitle {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            max-width: 640px;
+            margin-bottom: 2rem;
+        }
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            justify-content: center;
+            margin-bottom: 2.5rem;
+        }
+        .tag {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+            white-space: nowrap;
+        }
+        .pipeline {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            margin-bottom: 1rem;
+            max-width: var(--max-width);
+        }
+        .pipeline-step {
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            padding: 0.3rem 0.7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+        }
+        .pipeline-arrow { color: var(--accent); font-size: 0.9rem; font-weight: 700; }
+        .slide {
+            min-height: 100vh;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 4rem 1.5rem;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .slide-number {
+            font-family: var(--font-display);
+            font-size: 5rem;
+            font-weight: 700;
+            color: var(--accent-dim);
+            position: absolute;
+            top: 2rem;
+            right: 1.5rem;
+            line-height: 1;
+            user-select: none;
+        }
+        .slide h2 {
+            font-family: var(--font-display);
+            font-size: 1.9rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+            line-height: 1.25;
+        }
+        .slide h3 {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+        .slide p { margin-bottom: 1rem; color: var(--text-secondary); }
+        .slide p strong { color: var(--text-primary); }
+        .slide ul, .slide ol { margin-bottom: 1rem; padding-left: 1.5rem; color: var(--text-secondary); }
+        .slide li { margin-bottom: 0.4rem; }
+        .slide li strong { color: var(--text-primary); }
+        .slide code {
+            font-family: var(--font-mono);
+            font-size: 0.88em;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            padding: 0.05rem 0.35rem;
+            border-radius: 3px;
+            color: #c9d1d9;
+        }
+        .code-block {
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 1.25rem 0;
+            overflow: hidden;
+        }
+        .code-header {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            background: rgba(118, 185, 0, 0.08);
+            padding: 0.4rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .code-block pre { margin: 0; padding: 1rem; overflow-x: auto; }
+        .code-block code {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+            background: transparent;
+            border: none;
+            padding: 0;
+        }
+        .kw { color: #ff7b72; }
+        .fn { color: #d2a8ff; }
+        .str { color: #a5d6ff; }
+        .cm { color: #8b949e; font-style: italic; }
+        .num { color: #79c0ff; }
+        .type { color: #ffa657; }
+        .dir { color: #ff7b72; }
+        .mac { color: #ffa657; }
+        .table-wrap {
+            overflow-x: auto;
+            margin: 1.25rem 0;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            background: var(--bg-code);
+            color: var(--accent);
+            font-weight: 600;
+            text-align: left;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            font-family: var(--font-display);
+            white-space: nowrap;
+        }
+        td {
+            padding: 0.6rem 1rem;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:nth-child(even) td { background: rgba(13, 17, 23, 0.5); }
+        .diagram-flow {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-box {
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            padding: 0.5rem 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            text-align: center;
+            white-space: nowrap;
+        }
+        .diagram-box.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-box.dim { color: var(--text-secondary); border-color: var(--border); }
+        .diagram-arrow { color: var(--accent); font-size: 1.3rem; font-weight: 700; }
+        .diagram-vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.3rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-vertical .diagram-arrow { font-size: 1.1rem; }
+        .hierarchy {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .hierarchy-level { display: flex; align-items: center; gap: 0.75rem; }
+        .hierarchy-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            min-width: 80px;
+            text-align: right;
+        }
+        .hierarchy-items { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+        .hierarchy-item {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            padding: 0.3rem 0.6rem;
+            border-radius: 4px;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+        .hierarchy-item.accent { border-color: var(--accent); color: var(--accent); background: rgba(118, 185, 0, 0.08); }
+        .diagram-grid {
+            display: grid;
+            gap: 0.75rem;
+            margin: 1.5rem 0;
+            padding: 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .diagram-grid.cols-2 { grid-template-columns: 1fr 1fr; }
+        .diagram-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+        .diagram-panel {
+            padding: 1rem;
+            background: var(--bg-code);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .diagram-panel.accent-border { border-left: 3px solid var(--accent); }
+        .diagram-panel h4 {
+            font-family: var(--font-display);
+            font-size: 1rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+        }
+        .diagram-panel p, .diagram-panel ul { font-size: 0.85rem; }
+        .callout {
+            background: var(--bg-card);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            padding: 1rem 1.25rem;
+            margin: 1.25rem 0;
+        }
+        .callout p { margin-bottom: 0; }
+        .callout p + p { margin-top: 0.5rem; }
+        .callout .callout-label {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.3rem;
+        }
+        .contents-list { list-style: none; padding-left: 0; counter-reset: contents; }
+        .contents-list li {
+            counter-increment: contents;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        .contents-list li:last-child { border-bottom: none; }
+        .contents-list li::before {
+            content: counter(contents, decimal-leading-zero);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            color: var(--accent);
+            min-width: 2rem;
+        }
+        .contents-list a { color: var(--text-primary); text-decoration: none; transition: color 0.2s; }
+        .contents-list a:hover { color: var(--accent); }
+        .footer {
+            text-align: center;
+            padding: 3rem 1.5rem;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            max-width: var(--max-width);
+            margin: 0 auto;
+        }
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+        .canvas-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1.25rem 0;
+            overflow-x: auto;
+        }
+        .canvas-wrap canvas, .canvas-wrap svg { display: block; margin: 0 auto; max-width: 100%; }
+        .badge {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            padding: 0.1rem 0.45rem;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            vertical-align: middle;
+            margin-left: 0.3rem;
+        }
+        .badge.ok    { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+        .badge.warn  { border-color: #ffa657; color: #ffa657; background: rgba(255,166,87,0.08); }
+        .badge.bad   { border-color: #ff7b72; color: #ff7b72; background: rgba(255,123,114,0.08); }
+        @media (max-width: 640px) {
+            .slide { padding: 3rem 1rem; min-height: auto; }
+            .slide-number { font-size: 3rem; top: 1.5rem; right: 1rem; }
+            .slide h2 { font-size: 1.5rem; }
+            .diagram-grid.cols-2, .diagram-grid.cols-3 { grid-template-columns: 1fr; }
+            .pipeline { gap: 0.15rem; }
+            .pipeline-step { font-size: 0.6rem; padding: 0.2rem 0.4rem; }
+            .hero h1 { font-size: 1.8rem; }
+            table { font-size: 0.78rem; }
+        }
+    </style>
+</head>
+<body>
+<header class="hero">
+    <div class="series-label">RAG &amp; Retrieval Systems Series &mdash; Presentation 02</div>
+    <h1>Vector Databases &mdash; <span class="accent">Recall, Latency &amp; Scale</span></h1>
+    <p class="subtitle">HNSW, IVF, PQ, scalar &amp; binary quantisation; pgvector, Qdrant, Weaviate, LanceDB, Pinecone, Milvus &mdash; the full decision space for 1 k to 1 B vectors.</p>
+    <div class="tags">
+        <span class="tag">HNSW</span>
+        <span class="tag">IVF + PQ</span>
+        <span class="tag">Quantisation</span>
+        <span class="tag">Filtered Search</span>
+        <span class="tag">pgvector</span>
+        <span class="tag">Qdrant</span>
+        <span class="tag">Milvus</span>
+    </div>
+    <div class="pipeline">
+        <span class="pipeline-step">Embed</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Quantise</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Index (HNSW/IVF)</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Filter</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">ANN Search</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Re-score</span>
+        <span class="pipeline-arrow">&rarr;</span>
+        <span class="pipeline-step">Top-k</span>
+    </div>
+</header>
+
+<section class="slide" id="slide-00">
+    <div class="slide-number">00</div>
+    <h2>Topics We'll Cover</h2>
+    <ul class="contents-list">
+        <li><a href="#slide-01">The Vector DB Landscape</a></li>
+        <li><a href="#slide-02">ANN Algorithms &mdash; IVF, HNSW, PQ, Scalar &amp; Binary Quantisation</a></li>
+        <li><a href="#slide-03">HNSW Deep Dive &mdash; Layers, ef_construction, ef_search, M</a></li>
+        <li><a href="#slide-04">IVF + PQ &mdash; Compression for 100M+ Vectors</a></li>
+        <li><a href="#slide-05">Filtered Search &mdash; Pre/Post-Filter, Metadata Indexing</a></li>
+        <li><a href="#slide-06">Updates, Deletes &amp; Snapshots</a></li>
+        <li><a href="#slide-07">pgvector in Depth &mdash; IVFFLAT vs HNSW on Postgres</a></li>
+        <li><a href="#slide-08">Choosing a Vector DB &mdash; Decision Matrix</a></li>
+        <li><a href="#slide-09">What to Take Away</a></li>
+    </ul>
+</section>
+
+<section class="slide" id="slide-01">
+    <div class="slide-number">01</div>
+    <h2>The Vector DB Landscape</h2>
+    <p>Vector databases are not a single category. They differ fundamentally on four axes: storage architecture, indexing algorithm, filter capability, and operational model. Before choosing, classify your workload:</p>
+    <div class="diagram-grid cols-3">
+        <div class="diagram-panel accent-border">
+            <h4>Pure vector stores</h4>
+            <p>Pinecone, Weaviate Standalone, Qdrant. Purpose-built. Best recall and filter latency. No SQL. Operational complexity: separate service, separate backup, separate auth.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Embedded / in-process</h4>
+            <p>LanceDB (DuckDB lineage), ChromaDB, Faiss (raw library). Zero extra infra. LanceDB stores data in Parquet via Lance format on S3/GCS &mdash; serverless-friendly. Faiss is a library, not a server.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Postgres extensions</h4>
+            <p>pgvector (HNSW + IVFFLAT), pgvecto.rs (Rust, faster build). Use if you already run Postgres &mdash; one less service, full ACID, SQL JOINs across metadata and vectors. 10&ndash;20% slower recall than native vector DBs at &gt;1 M vectors.</p>
+        </div>
+    </div>
+    <div class="callout">
+        <div class="callout-label">Milvus / Zilliz &mdash; the scale champion</div>
+        <p><strong>Milvus 2.x</strong> is the open-source choice for &gt;100 M vectors: disaggregated storage/compute via S3 + etcd + Pulsar, GPU-accelerated IVF-PQ and RAFT-CAGRA indexes, horizontal scaling to billions of vectors. <strong>Zilliz Cloud</strong> is the managed version. If you are below 10 M vectors and don't need GPU indexing, Milvus's operational complexity is not warranted.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-02">
+    <div class="slide-number">02</div>
+    <h2>ANN Algorithms &mdash; IVF, HNSW, PQ, Scalar &amp; Binary Quantisation</h2>
+    <p>All ANN algorithms trade <strong>recall</strong> (fraction of true nearest neighbours returned) against <strong>latency</strong> and <strong>memory</strong>. The tradeoff surface has a characteristic knee; good production systems sit just above the knee.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Algorithm</th><th>Index build time</th><th>Query latency</th><th>Memory</th><th>Incremental adds?</th></tr></thead>
+            <tbody>
+                <tr><td><strong>IVF-Flat</strong></td><td>Fast (k-means)</td><td>Medium &mdash; scans nprobe clusters</td><td>Full float32 vectors</td><td>Yes, but nlist rebuild recommended</td></tr>
+                <tr><td><strong>IVF-PQ</strong></td><td>Medium (k-means + PQ training)</td><td>Fast &mdash; compressed distance</td><td>8&ndash;32&times; compression vs float32</td><td>Yes</td></tr>
+                <tr><td><strong>HNSW</strong></td><td>Slow (graph build O(N log N))</td><td>Very fast &mdash; graph traversal</td><td>Full vectors + graph overhead (~50%)</td><td>Yes, amortised O(log N)</td></tr>
+                <tr><td><strong>Scalar quant (SQ8)</strong></td><td>Fast</td><td>Fast &mdash; int8 dot-product</td><td>4&times; compression vs float32</td><td>Yes</td></tr>
+                <tr><td><strong>Binary quant</strong></td><td>Very fast</td><td>Very fast &mdash; popcount</td><td>32&times; compression</td><td>Yes</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">Binary quantisation with rescoring</div>
+        <p>Qdrant's <strong>binary quantisation</strong> compresses each float32 dimension to a single bit (sign only). The 32&times; size reduction means the entire index may fit in RAM. Precision loss is recovered via <strong>rescoring</strong>: ANN returns 4&times; more candidates from binary search, then full-precision float32 vectors are loaded for the final scoring pass. Net result: &gt;40&times; memory reduction with &lt;5% recall drop at &gt;96% recall@10 on most benchmarks.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-03">
+    <div class="slide-number">03</div>
+    <h2>HNSW Deep Dive &mdash; Layers, ef_construction, ef_search, M</h2>
+    <p>HNSW (Hierarchical Navigable Small World, Malkov &amp; Yashunin 2016) is a layered proximity graph. Understanding its three key parameters is essential for production tuning.</p>
+    <div class="canvas-wrap">
+        <svg viewBox="0 0 700 230" width="700" height="230" xmlns="http://www.w3.org/2000/svg">
+            <style>
+                .hn-node { fill: #161b22; stroke: #30363d; stroke-width: 1; }
+                .hn-noda { fill: rgba(118,185,0,0.15); stroke: #76B900; stroke-width: 1.5; }
+                .hn-edge { stroke: #30363d; stroke-width: 1; }
+                .hn-edga { stroke: #76B900; stroke-width: 1.5; stroke-dasharray: 4 2; }
+                .hn-lbl  { fill: #8b949e; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+                .hn-ttl  { fill: #76B900; font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 12px; }
+            </style>
+            <!-- Layer labels -->
+            <text x="10" y="30"  class="hn-ttl">Layer 2 (sparse, long-range)</text>
+            <text x="10" y="100" class="hn-ttl">Layer 1</text>
+            <text x="10" y="185" class="hn-ttl">Layer 0 (dense, all nodes)</text>
+            <!-- Layer 2 nodes + edges -->
+            <circle cx="200" cy="45" r="8" class="hn-noda"/>
+            <circle cx="450" cy="45" r="8" class="hn-noda"/>
+            <circle cx="600" cy="45" r="8" class="hn-node"/>
+            <line x1="200" y1="45" x2="450" y2="45" class="hn-edga"/>
+            <line x1="450" y1="45" x2="600" y2="45" class="hn-edge"/>
+            <!-- Layer 1 nodes + edges -->
+            <circle cx="150" cy="115" r="8" class="hn-node"/>
+            <circle cx="250" cy="115" r="8" class="hn-noda"/>
+            <circle cx="380" cy="115" r="8" class="hn-noda"/>
+            <circle cx="500" cy="115" r="8" class="hn-node"/>
+            <circle cx="620" cy="115" r="8" class="hn-node"/>
+            <line x1="150" y1="115" x2="250" y2="115" class="hn-edge"/>
+            <line x1="250" y1="115" x2="380" y2="115" class="hn-edga"/>
+            <line x1="380" y1="115" x2="500" y2="115" class="hn-edga"/>
+            <line x1="500" y1="115" x2="620" y2="115" class="hn-edge"/>
+            <!-- Layer 0 (representative) -->
+            <circle cx="100" cy="200" r="6" class="hn-node"/>
+            <circle cx="160" cy="200" r="6" class="hn-node"/>
+            <circle cx="220" cy="200" r="6" class="hn-node"/>
+            <circle cx="280" cy="200" r="6" class="hn-node"/>
+            <circle cx="340" cy="200" r="6" class="hn-noda"/>
+            <circle cx="400" cy="200" r="6" class="hn-noda"/>
+            <circle cx="460" cy="200" r="6" class="hn-node"/>
+            <circle cx="520" cy="200" r="6" class="hn-node"/>
+            <circle cx="580" cy="200" r="6" class="hn-node"/>
+            <circle cx="640" cy="200" r="6" class="hn-node"/>
+            <!-- vertical inter-layer pointers -->
+            <line x1="200" y1="53" x2="250" y2="107" stroke="#76B90066" stroke-width="1" stroke-dasharray="2 2"/>
+            <line x1="450" y1="53" x2="380" y2="107" stroke="#76B90066" stroke-width="1" stroke-dasharray="2 2"/>
+            <!-- annotation -->
+            <text x="10" y="220" class="hn-lbl">Green path = greedy search descending layers toward query vector</text>
+        </svg>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Parameter</th><th>Effect</th><th>Typical range</th><th>Rule of thumb</th></tr></thead>
+            <tbody>
+                <tr><td><code>M</code></td><td>Max outgoing edges per node. Controls graph connectivity and memory overhead.</td><td>8&ndash;64</td><td>16 for general retrieval; 32+ for high-recall applications</td></tr>
+                <tr><td><code>ef_construction</code></td><td>Size of the dynamic candidate list during index build. Higher = better graph, slower build.</td><td>100&ndash;400</td><td>200 is a safe default; double for production quality</td></tr>
+                <tr><td><code>ef_search</code></td><td>Size of the dynamic candidate list during query. Controls the recall&ndash;latency tradeoff at <em>query time</em>.</td><td>50&ndash;400</td><td>Start at 2&times;k (where k is the number of results wanted)</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">Memory formula for HNSW</div>
+        <p>HNSW memory &asymp; N &times; (dim &times; 4 bytes + M &times; 2 &times; 8 bytes). For 1 M documents at 768 dims and M=16: 1M &times; (3072 + 256) bytes &asymp; 3.2 GB. The graph pointer overhead is around 8% at M=16; at M=64 it rises to 25%. pgvector's HNSW uses <code>hnsw.m</code> and <code>hnsw.ef_search</code> as session parameters.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-04">
+    <div class="slide-number">04</div>
+    <h2>IVF + PQ &mdash; Compression for 100M+ Vectors</h2>
+    <p>Inverted File Index (IVF) partitions the vector space into Voronoi cells via k-means. Product Quantisation (PQ, J&eacute;gou et al. 2011) compresses each vector by splitting it into M sub-vectors and quantising each sub-vector against a codebook of 256 centroids, yielding M bytes per vector.</p>
+    <div class="diagram-vertical">
+        <div class="diagram-box accent">1. k-means training: nlist=4096 cluster centroids from a sample</div>
+        <div class="diagram-arrow">&darr;</div>
+        <div class="diagram-box">2. Assign each document vector to its nearest centroid (inverted list)</div>
+        <div class="diagram-arrow">&darr;</div>
+        <div class="diagram-box accent">3. PQ-compress each residual (vector &minus; centroid): 768d &rarr; 96 bytes</div>
+        <div class="diagram-arrow">&darr;</div>
+        <div class="diagram-box">4. At query time: scan nprobe=64 lists, compute PQ ADC distances</div>
+        <div class="diagram-arrow">&darr;</div>
+        <div class="diagram-box accent">5. Re-rank top candidates with full float32 vectors (optional)</div>
+    </div>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>Scenario</th><th>nlist</th><th>nprobe</th><th>PQ bytes</th><th>Recall@10</th><th>RAM for 100M &times; 768d</th></tr></thead>
+            <tbody>
+                <tr><td>Fast/low recall</td><td>4096</td><td>32</td><td>64</td><td>~80%</td><td>~6.4 GB</td></tr>
+                <tr><td>Balanced</td><td>4096</td><td>128</td><td>96</td><td>~92%</td><td>~9.6 GB</td></tr>
+                <tr><td>High recall</td><td>8192</td><td>256</td><td>192</td><td>~97%</td><td>~19.2 GB</td></tr>
+                <tr><td>Baseline (IVF-Flat)</td><td>4096</td><td>128</td><td>n/a (full)</td><td>~99%</td><td>307 GB</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">FAISS index string syntax</div>
+        <p>FAISS uses a compact DSL to specify index types. <code>IVF4096,PQ96</code> means IVF with 4096 clusters and PQ with 96 bytes. <code>IVF4096_HNSW32,PQ96</code> uses an HNSW index over the centroids instead of exhaustive centroid search &mdash; faster for nlist &gt; 1000. <code>OPQ96_192,IVF4096,PQ96</code> adds an orthogonal rotation preprocessing step that improves PQ reconstruction accuracy by ~1&ndash;2 NDCG points at no runtime cost.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-05">
+    <div class="slide-number">05</div>
+    <h2>Filtered Search &mdash; Pre/Post-Filter, Metadata Indexing</h2>
+    <p>Most production RAG queries include at least one metadata filter: <em>user_id</em>, <em>doc_type</em>, <em>date_range</em>, <em>tenant_id</em>. The strategy for applying these filters determines recall and latency far more than the ANN algorithm choice.</p>
+    <div class="diagram-grid cols-3">
+        <div class="diagram-panel accent-border">
+            <h4>Post-filter (naive)</h4>
+            <p>Run ANN unrestricted; filter results afterward. Simple to implement. <strong>Fails</strong> when selectivity is high (e.g. 0.1% of documents match filter): ANN returns k results, all may be filtered out, requiring fallback to brute-force scan. Never use for high-selectivity filters.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Pre-filter (brute force)</h4>
+            <p>Fetch all doc IDs matching the metadata filter; run exact nearest-neighbour only within that set. Correct by definition. Expensive when the matching set is large. Qdrant's <strong>payload indexes</strong> (B-tree or hash) make this efficient for selectivities &gt; 10%.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>Hybrid HNSW + filter</h4>
+            <p>Qdrant's implementation: traverse the HNSW graph normally, but skip nodes that fail the payload filter. Requires that the filter predicate be checkable in O(1). Best of both worlds when filter selectivity is 1&ndash;50%. Configurable via <code>m_payload_m</code> and <code>full_scan_threshold</code>.</p>
+        </div>
+    </div>
+    <div class="code-block">
+        <div class="code-header">Qdrant filtered search (Python client v1.9)</div>
+<pre><code><span class="kw">from</span> qdrant_client <span class="kw">import</span> QdrantClient, models
+
+client = <span class="fn">QdrantClient</span>(<span class="str">"localhost"</span>, port=<span class="num">6333</span>)
+
+results = client.<span class="fn">query_points</span>(
+    collection_name=<span class="str">"docs"</span>,
+    query=query_vector,          <span class="cm"># 1024-dim float list</span>
+    query_filter=models.<span class="fn">Filter</span>(
+        must=[
+            models.<span class="fn">FieldCondition</span>(
+                key=<span class="str">"tenant_id"</span>,
+                match=models.<span class="fn">MatchValue</span>(value=<span class="str">"acme-corp"</span>),
+            ),
+            models.<span class="fn">FieldCondition</span>(
+                key=<span class="str">"doc_date"</span>,
+                range=models.<span class="fn">Range</span>(gte=<span class="num">1704067200</span>),  <span class="cm"># 2024-01-01 Unix</span>
+            ),
+        ]
+    ),
+    limit=<span class="num">20</span>,
+    with_payload=<span class="kw">True</span>,
+)</code></pre>
+    </div>
+</section>
+
+<section class="slide" id="slide-06">
+    <div class="slide-number">06</div>
+    <h2>Updates, Deletes &amp; Snapshots</h2>
+    <p>Most vector DBs are append-optimised. Understanding the mutation model prevents data-loss incidents and painful re-index operations.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>System</th><th>Delete strategy</th><th>Update strategy</th><th>Snapshot / backup</th></tr></thead>
+            <tbody>
+                <tr><td><strong>Qdrant</strong></td><td>Soft-delete via tombstone in the WAL; compacted on segment merge. O(1) delete API.</td><td>Upsert by ID: delete old + insert new in one atomic operation.</td><td><code>PUT /collections/{name}/snapshots</code> &rarr; tar.gz. Supports S3 upload directly.</td></tr>
+                <tr><td><strong>Weaviate</strong></td><td>Immediate delete; segment compaction in background (HNSW lazy delete).</td><td>PUT /v1/objects/{id}: full document replacement.</td><td>Backup API to S3/GCS/Azure Blob; incremental since v1.23.</td></tr>
+                <tr><td><strong>Milvus</strong></td><td>Mark-and-compact; auto-compaction threshold configurable.</td><td>Delete + insert (no in-place). Use <code>upsert()</code> API in pymilvus &ge; 2.3.</td><td>Milvus Backup tool; etcd + S3 for metadata + segments.</td></tr>
+                <tr><td><strong>pgvector</strong></td><td>Standard Postgres MVCC. No special handling.</td><td>Standard <code>UPDATE</code>. HNSW index updated in place; <code>VACUUM</code> reclaims space.</td><td>Standard Postgres WAL / pg_dump / PITR.</td></tr>
+                <tr><td><strong>LanceDB</strong></td><td>Append-only Lance format; deletions written as separate delete files merged lazily.</td><td><code>table.merge_insert()</code> in LanceDB 0.5+.</td><td>Lance files are Parquet-like; back up with standard object-store sync.</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">The stale-index trap</div>
+        <p>HNSW does not support efficient in-place deletion. Qdrant and Weaviate both use a lazy strategy: deleted node IDs are tombstoned in memory and the graph retains stale edges until a segment rewrite is triggered. If you delete &gt;20% of a collection, trigger compaction manually or your recall will degrade as searches traverse dead nodes. Qdrant: <code>POST /collections/{name}/points/delete</code> + monitor <code>optimizers_status</code>.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-07">
+    <div class="slide-number">07</div>
+    <h2>pgvector in Depth &mdash; IVFFLAT vs HNSW on Postgres</h2>
+    <p><strong>pgvector</strong> (v0.7, 2024) added HNSW support, making it a serious option for &lt;5 M vector workloads already running Postgres. The two index types behave very differently under load.</p>
+    <div class="diagram-grid cols-2">
+        <div class="diagram-panel accent-border">
+            <h4>IVFFLAT</h4>
+            <p>Build: <code>CREATE INDEX ... USING ivfflat (embedding vector_cosine_ops) WITH (lists=256)</code>. Fast build, slow query (scan <code>probes</code> lists). Set <code>SET ivfflat.probes = 10</code> per session. Recommend building after bulk load: <code>SET maintenance_work_mem = '2GB'</code>. Rule of thumb: <code>lists = sqrt(N)</code> for N &le; 1 M; <code>lists = N/1000</code> for N &gt; 1 M.</p>
+        </div>
+        <div class="diagram-panel accent-border">
+            <h4>HNSW</h4>
+            <p>Build: <code>CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)</code>. Slower build, faster and higher-recall query. Uses <code>hnsw.ef_search</code>. <strong>Memory during build</strong>: pgvector's HNSW build requires ~2&ndash;4 GB for 1 M &times; 768d. Set <code>maintenance_work_mem = '4GB'</code>. Index is stored in Postgres heap pages &mdash; no separate file.</p>
+        </div>
+    </div>
+    <div class="code-block">
+        <div class="code-header">pgvector HNSW setup and query (Postgres 16)</div>
+<pre><code><span class="cm">-- Extension + table</span>
+<span class="kw">CREATE EXTENSION IF NOT EXISTS</span> vector;
+<span class="kw">CREATE TABLE</span> documents (
+    id       <span class="type">bigserial</span> <span class="kw">PRIMARY KEY</span>,
+    content  <span class="type">text</span>,
+    metadata <span class="type">jsonb</span>,
+    embedding <span class="type">vector</span>(<span class="num">768</span>)
+);
+
+<span class="cm">-- Build HNSW index after bulk load</span>
+<span class="kw">SET</span> maintenance_work_mem = <span class="str">'4GB'</span>;
+<span class="kw">CREATE INDEX</span> docs_embedding_hnsw
+    <span class="kw">ON</span> documents
+    <span class="kw">USING</span> hnsw (embedding <span class="fn">vector_cosine_ops</span>)
+    <span class="kw">WITH</span> (m=<span class="num">16</span>, ef_construction=<span class="num">128</span>);
+
+<span class="cm">-- Query: top-10 nearest with metadata filter</span>
+<span class="kw">SET</span> hnsw.ef_search = <span class="num">80</span>;
+<span class="kw">SELECT</span> id, content, <span class="num">1</span> - (embedding &lt;=&gt; <span class="str">'[...]'</span>::<span class="type">vector</span>) <span class="kw">AS</span> score
+<span class="kw">FROM</span>  documents
+<span class="kw">WHERE</span> metadata->><span class="str">'tenant'</span> = <span class="str">'acme'</span>
+<span class="kw">ORDER BY</span> embedding &lt;=&gt; <span class="str">'[...]'</span>::<span class="type">vector</span>
+<span class="kw">LIMIT</span> <span class="num">10</span>;</code></pre>
+    </div>
+</section>
+
+<section class="slide" id="slide-08">
+    <div class="slide-number">08</div>
+    <h2>Choosing a Vector DB &mdash; Decision Matrix</h2>
+    <p>There is no universally best choice. The right system depends on scale, latency SLA, filter complexity, and what you already run in production.</p>
+    <div class="table-wrap">
+        <table>
+            <thead><tr><th>System</th><th>Sweet spot</th><th>Index types</th><th>Managed option</th><th>Filter quality</th><th>Notable gap</th></tr></thead>
+            <tbody>
+                <tr><td><strong>pgvector</strong></td><td>&lt;5 M; already on Postgres</td><td>HNSW, IVFFLAT</td><td>RDS/Supabase/Neon</td><td>Full SQL WHERE</td><td>Slower than native VDBs; no binary quant</td></tr>
+                <tr><td><strong>Qdrant</strong></td><td>1 k &ndash; 100 M; strong filter needs</td><td>HNSW + binary/scalar quant</td><td>Qdrant Cloud</td><td>Excellent (payload index)</td><td>No GPU indexing</td></tr>
+                <tr><td><strong>Weaviate</strong></td><td>1 k &ndash; 50 M; multi-modal, hybrid</td><td>HNSW, flat</td><td>Weaviate Cloud</td><td>Good (BM25 hybrid built-in)</td><td>Heavier RAM footprint</td></tr>
+                <tr><td><strong>LanceDB</strong></td><td>Serverless; S3-native; analytics</td><td>IVF-PQ, HNSW</td><td>LanceDB Cloud</td><td>SQL via DuckDB</td><td>No real-time sub-millisecond queries</td></tr>
+                <tr><td><strong>Pinecone</strong></td><td>Zero-ops; variable load</td><td>Proprietary (HNSW-like)</td><td>SaaS only</td><td>Metadata filters</td><td>Vendor lock-in; no self-host</td></tr>
+                <tr><td><strong>Milvus</strong></td><td>&gt;100 M; GPU workloads</td><td>IVF-PQ, HNSW, GPU RAFT</td><td>Zilliz Cloud</td><td>Good (scalar index)</td><td>Operational complexity</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="callout">
+        <div class="callout-label">Start with pgvector, graduate to Qdrant</div>
+        <p>For teams starting fresh: use pgvector on your existing Postgres. When you hit &gt;5 M documents or need binary quantisation, migrate to Qdrant. LanceDB is the right default for data-science teams using DuckDB and storing data on S3. Pinecone is justified only if you have strict zero-ops requirements and can accept the cost and lock-in.</p>
+    </div>
+</section>
+
+<section class="slide" id="slide-09">
+    <div class="slide-number">09</div>
+    <h2>What to Take Away</h2>
+    <ul>
+        <li><strong>HNSW dominates query latency</strong> at the cost of slow build and large memory. IVF+PQ dominates memory at the cost of recall and build complexity.</li>
+        <li><strong>Key HNSW parameters:</strong> M controls connectivity and memory; ef_construction controls build quality; ef_search is the query-time recall knob.</li>
+        <li><strong>Binary quantisation + rescoring</strong> is the best recall-per-byte deal for &gt;10 M vector collections (Qdrant's implementation is production-ready).</li>
+        <li><strong>Pre-filter vs hybrid-filter:</strong> never naive post-filter for high-selectivity predicates. Use Qdrant's payload indexes or pgvector's SQL WHERE clause.</li>
+        <li><strong>Deletions degrade HNSW recall</strong> silently. Monitor tombstone fraction; trigger compaction before it exceeds 20%.</li>
+        <li><strong>pgvector is sufficient for &lt;5 M vectors</strong> if you already run Postgres. HNSW with ef_search=80, M=16, ef_construction=128 is a solid starting configuration.</li>
+        <li><strong>Milvus for &gt;100 M</strong>; Qdrant for 1 M&ndash;100 M with complex filters; LanceDB for serverless/S3 analytics workloads.</li>
+    </ul>
+    <div class="callout">
+        <div class="callout-label">Where to next</div>
+        <p>Deck 03 covers hybrid search &mdash; combining BM25 sparse retrieval with dense vectors via Reciprocal Rank Fusion &mdash; and reranking pipelines including BGE-reranker-v2-m3, Cohere Rerank 3.5, and ColBERT-as-reranker via PLAID.</p>
+    </div>
+</section>
+
+<footer class="footer">
+    <p>Part of the <a href="https://github.com/BrendanJamesLynskey/LLM_Hub_RAG_Retrieval">RAG &amp; Retrieval Systems Series</a></p>
+    <p style="margin-top:0.5rem;font-size:0.8rem;"><a href="https://github.com/BrendanJamesLynskey/LLM_Hub_RAG_Retrieval">Back to Series Index</a></p>
+</footer>
+<script>
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    });
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.style.opacity = '1';
+                entry.target.style.transform = 'translateY(0)';
+            }
+        });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.slide').forEach(slide => {
+        slide.style.opacity = '0';
+        slide.style.transform = 'translateY(30px)';
+        slide.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+        observer.observe(slide);
+    });
+</script>
+</body>
+</html>
